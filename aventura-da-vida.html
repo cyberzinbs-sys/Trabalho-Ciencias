@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Aventura da Vida 3D</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@600;800&family=Press+Start+2P&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;background:#07040f;color:#f4ecf4;font-family:Nunito,system-ui,sans-serif;overflow:hidden;touch-action:none}
+#app{position:relative;width:100%;height:100%}
+canvas#c{display:block;width:100%;height:100%}
+#top{
+  position:absolute;top:0;left:0;right:0;z-index:10;pointer-events:none;
+  padding:12px 16px 28px;
+  background:linear-gradient(to bottom,rgba(7,4,15,.95),transparent);
+}
+#brand{font-family:'Press Start 2P',monospace;font-size:10px;color:#ff6b9d;letter-spacing:.06em}
+#phase{font-family:'Press Start 2P',monospace;font-size:11px;color:#ffe6c8;margin-top:8px;line-height:1.45}
+#row{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}
+#stats{display:flex;gap:14px;font-family:'Press Start 2P',monospace;font-size:9px;color:#b9a7c4;margin-top:4px}
+#stats b{color:#ff7eaa;font-weight:400}
+#hint{margin-top:10px;font-size:14px;line-height:1.4;color:#ddd0e8;max-width:900px}
+#barwrap{margin-top:10px;height:8px;background:#24182f;border-radius:99px;overflow:hidden;max-width:420px}
+#bar{height:100%;width:0%;background:linear-gradient(90deg,#1abc9c,#ff6b9d);transition:width .15s linear}
+#overlay{
+  position:absolute;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;
+  background:rgba(5,2,12,.82);padding:16px;
+}
+#overlay.hide{display:none}
+.card{
+  width:min(580px,100%);background:#140c1f;border:3px solid #ff6b9d;border-radius:18px;
+  padding:22px 20px 18px;box-shadow:0 0 50px rgba(255,107,157,.22);
+}
+.card h1{font-family:'Press Start 2P',monospace;font-size:15px;color:#ff6b9d;line-height:1.55;margin-bottom:8px}
+.card h2{font-family:'Press Start 2P',monospace;font-size:10px;color:#ffe6c8;line-height:1.5;margin-bottom:12px}
+.card p{font-size:15px;line-height:1.5;color:#ebe1f2;margin-bottom:10px}
+.sci{background:#1d1430;border-left:4px solid #1abc9c;padding:11px 12px;border-radius:0 12px 12px 0;margin:12px 0;color:#c7f6e7;font-size:14px;line-height:1.45}
+.btn{
+  display:block;width:100%;margin-top:14px;padding:14px 12px;border:0;border-radius:999px;
+  background:#ff6b9d;color:#2a0816;font-family:'Press Start 2P',monospace;font-size:11px;cursor:pointer;
+}
+.btn:hover{background:#ff9ec0}
+.btn:active{transform:scale(.98)}
+#pad{position:absolute;left:12px;right:12px;bottom:12px;z-index:20;display:flex;justify-content:space-between;align-items:flex-end;pointer-events:none}
+.dpad{display:grid;grid-template-columns:54px 54px 54px;grid-template-rows:54px 54px 54px;gap:6px;pointer-events:auto}
+.dpad button,.act{
+  border:2px solid #3b2c4c;background:#1a1028;color:#ffe6c8;border-radius:12px;
+  font-family:'Press Start 2P',monospace;font-size:10px;touch-action:none;user-select:none;pointer-events:auto
+}
+.dpad button:active,.act:active{background:#ff6b9d;color:#2a0816}
+.act{width:78px;height:78px;border-radius:50%;border:3px solid #ffe6c8;background:#ff6b9d;color:#2a0816}
+.g{visibility:hidden}
+#toast{
+  position:absolute;left:50%;top:42%;transform:translate(-50%,-50%);z-index:25;
+  font-family:'Press Start 2P',monospace;font-size:14px;color:#fff;text-shadow:0 0 12px #ff6b9d;
+  opacity:0;pointer-events:none;transition:opacity .2s;
+}
+#toast.show{opacity:1}
+@media(min-width:900px){#pad{opacity:.4}}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="top">
+    <div id="row">
+      <div>
+        <div id="brand">AVENTURA DA VIDA</div>
+        <div id="phase">…</div>
+      </div>
+      <div id="stats">
+        <span>VIDAS <b id="lives">3</b></span>
+        <span>PONTOS <b id="score">0</b></span>
+        <span>RECORDE <b id="best">0</b></span>
+      </div>
+    </div>
+    <div id="hint"></div>
+    <div id="barwrap"><div id="bar"></div></div>
+  </div>
+  <canvas id="c"></canvas>
+  <div id="toast"></div>
+  <div id="overlay"><div class="card" id="card"></div></div>
+  <div id="pad">
+    <div class="dpad">
+      <span class="g"></span><button type="button" data-k="up">▲</button><span class="g"></span>
+      <button type="button" data-k="left">◀</button>
+      <button type="button" data-k="down">▼</button>
+      <button type="button" data-k="right">▶</button>
+    </div>
+    <button type="button" class="act" data-k="act">A</button>
+  </div>
+</div>
+
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js"}}</script>
+<script type="module">
+import * as THREE from 'three';
+
+const KEY='vida3d-v2';
+const held=new Set();
+const pad={u:0,d:0,l:0,r:0,a:0};
+let edgeA=false, wasA=false, lockUI=false;
+
+const el={
+  phase:document.getElementById('phase'),
+  hint:document.getElementById('hint'),
+  lives:document.getElementById('lives'),
+  score:document.getElementById('score'),
+  best:document.getElementById('best'),
+  bar:document.getElementById('bar'),
+  overlay:document.getElementById('overlay'),
+  card:document.getElementById('card'),
+  toast:document.getElementById('toast'),
+};
+
+const S={
+  mode:'title', // title story play growth win dead
+  phase:0, lives:3, score:0,
+  best:Number(localStorage.getItem(KEY)||0)||0,
+  prog:0, goal:1, inv:0, t:0, toastT:0,
+};
+
+const PHASE=[
+  {id:'swim',name:'Corrida até o óvulo',who:'Espermatozoide',
+   hint:'Nade até o óvulo rosa. Corrente empurra para frente. Desvie dos coágulos.'},
+  {id:'digest',name:'Sistema digestório',who:'Nutriente',
+   hint:'Labirinto do intestino. Chegue na saída creme. Evite ácido verde.'},
+  {id:'breathe',name:'Sistema respiratório',who:'Portador de O₂',
+   hint:'Colete 8 oxigênios azuis. A/Espaço dá impulso. Não caia no vazio.'},
+  {id:'filter',name:'Sistema excretor',who:'Célula filtradora',
+   hint:'Empurre 7 toxinas vermelhas até a faixa verde à esquerda.'},
+  {id:'hormone',name:'Sistema endócrino',who:'Mensageiro',
+   hint:'Pegue 6 hormônios verdes. Laranjas tiram vida. Mova-se sem parar.'},
+  {id:'birth',name:'Nascimento',who:'Bebê',
+   hint:'Suba o canal. Contrações vêm em ondas. Desvie para os lados.'},
+];
+
+const STORY=[
+  {t:'Capítulo 0 — Fecundação',
+   b:'Milhões competem. Apenas um espermatozoide fertiliza o óvulo e inicia a vida.',
+   s:'Ciência: a união dos núcleos forma o zigoto com 46 cromossomos e o plano genético completo.',
+   btn:'Começar corrida'},
+  {t:'Capítulo 1 — Digestório',
+   b:'O tubo digestivo se forma cedo. Depois, ele transformará comida em combustível celular.',
+   s:'Ciência: enzimas e vilosidades intestinais multiplicam a absorção de nutrientes.',
+   btn:'Entrar no intestino'},
+  {t:'Capítulo 2 — Respiratório',
+   b:'Sem oxigênio as células não produzem energia suficiente. Os pulmões farão essa troca.',
+   s:'Ciência: nos alvéolos, O₂ entra no sangue e CO₂ sai. A hemoglobina carrega o oxigênio.',
+   btn:'Coletar O₂'},
+  {t:'Capítulo 3 — Excretor',
+   b:'Resíduos no sangue precisam ser filtrados. Os rins mantêm o equilíbrio interno.',
+   s:'Ciência: cada rim tem cerca de 1 milhão de néfrons filtrando continuamente o plasma.',
+   btn:'Filtrar toxinas'},
+  {t:'Capítulo 4 — Endócrino',
+   b:'Hormônios são mensagens químicas. O equilíbrio entre elas regula crescimento e humor metabólico.',
+   s:'Ciência: hipófise, tireoide e adrenais liberam sinais na corrente sanguínea.',
+   btn:'Equilibrar sinais'},
+  {t:'Capítulo 5 — Nascimento',
+   b:'Após meses de construção, o bebê deixa o útero e respira pela primeira vez.',
+   s:'Ciência: oxitocina estimula contrações; ao nascer a circulação e os pulmões mudam de função.',
+   btn:'Nascer'},
+];
+
+const GROW=[
+  'Zigoto — uma célula, todo o DNA',
+  'Mórula / blastocisto — divisão rápida',
+  'Embrião — órgãos em esboço',
+  'Feto — sistemas em maturação',
+  'Feto avançado — quase pronto',
+  'A termo — pronto para nascer',
+];
+
+/* ----- three ----- */
+const canvas=document.getElementById('c');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setClearColor(0x07040f,1);
+const scene=new THREE.Scene();
+scene.fog=new THREE.Fog(0x07040f,14,48);
+const camera=new THREE.PerspectiveCamera(55,1,.1,100);
+scene.add(new THREE.HemisphereLight(0xffd0e0,0x121828,1.15));
+const sun=new THREE.DirectionalLight(0xffffff,.9);
+sun.position.set(5,14,8); scene.add(sun);
+const world=new THREE.Group(); scene.add(world);
+
+let player=null, ents=[], particles=[];
+
+function mat(c,e=0x000000,ei=.2){
+  return new THREE.MeshStandardMaterial({color:c,emissive:e,emissiveIntensity:ei,roughness:.5,metalness:.06});
+}
+function clearWorld(){
+  while(world.children.length){
+    const o=world.children[0]; world.remove(o);
+    o.traverse?.(x=>{x.geometry?.dispose?.(); if(x.material){Array.isArray(x.material)?x.material.forEach(m=>m.dispose?.()):x.material.dispose?.()}});
+  }
+  ents=[]; particles=[]; player=null;
+}
+function floor(c,w=28,d=18){
+  const m=new THREE.Mesh(new THREE.PlaneGeometry(w,d),mat(c,c,.04));
+  m.rotation.x=-Math.PI/2; world.add(m);
+  // grid lines subtle
+  const g=new THREE.GridHelper(Math.min(w,d),12,0xffffff,0xffffff);
+  g.material.opacity=.06; g.material.transparent=true; g.position.y=.01; world.add(g);
+}
+function addPlayer(color,kind='ball'){
+  let mesh;
+  if(kind==='sperm'){
+    mesh=new THREE.Group();
+    mesh.add(new THREE.Mesh(new THREE.SphereGeometry(.38,14,14),mat(0xffffff,0xffffff,.25)));
+    const tail=new THREE.Mesh(new THREE.CapsuleGeometry(.05,.95,4,8),mat(0xddddff));
+    tail.rotation.z=Math.PI/2; tail.position.x=-.75; mesh.add(tail); mesh.userData.tail=tail;
+  } else if(kind==='baby'){
+    mesh=new THREE.Group();
+    mesh.add(new THREE.Mesh(new THREE.SphereGeometry(.48,14,14),mat(0xffb6c8,0xff6b9d,.22)));
+    const head=new THREE.Mesh(new THREE.SphereGeometry(.34,14,14),mat(0xffd2de));
+    head.position.y=.58; mesh.add(head);
+  } else {
+    mesh=new THREE.Mesh(new THREE.SphereGeometry(.42,16,16),mat(color,color,.28));
+  }
+  mesh.position.set(0,.55,0); world.add(mesh);
+  player={mesh,x:0,y:.55,z:0,vx:0,vy:0,vz:0,r:.45,on:true};
+  return player;
+}
+function ball(x,y,z,r,c,kind,vx=0,vz=0){
+  const mesh=new THREE.Mesh(new THREE.SphereGeometry(r,12,12),mat(c,c,.35));
+  mesh.position.set(x,y,z); world.add(mesh);
+  const e={mesh,kind,x,y,z,vx,vz,r,taken:false,sx:0,sz:0};
+  ents.push(e); return e;
+}
+function box(x,y,z,sx,sy,sz,c,kind='wall'){
+  const mesh=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),mat(c));
+  mesh.position.set(x,y,z); world.add(mesh);
+  ents.push({mesh,kind,x,y,z,vx:0,vz:0,r:Math.max(sx,sz)/2,sx,sy,sz,taken:false});
+}
+function burst(x,y,z,c,n=10){
+  for(let i=0;i<n;i++){
+    const m=new THREE.Mesh(new THREE.SphereGeometry(.08,6,6),mat(c,c,.6));
+    m.position.set(x,y,z); world.add(m);
+    particles.push({m,vx:(Math.random()-.5)*6,vy:Math.random()*5,vz:(Math.random()-.5)*6,life:.5+Math.random()*.4});
+  }
+}
+function resize(){
+  const w=canvas.clientWidth||innerWidth, h=canvas.clientHeight||innerHeight;
+  renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix();
+}
+addEventListener('resize',resize); resize();
+
+/* input */
+addEventListener('keydown',e=>{
+  const k=e.key.toLowerCase();
+  if(['arrowup','arrowdown','arrowleft','arrowright',' ','w','a','s','d','enter'].includes(k)) e.preventDefault();
+  held.add(k);
+});
+addEventListener('keyup',e=>held.delete(e.key.toLowerCase()));
+document.querySelectorAll('[data-k]').forEach(b=>{
+  const k=b.getAttribute('data-k');
+  const set=v=>{
+    if(k==='up')pad.u=v; if(k==='down')pad.d=v; if(k==='left')pad.l=v; if(k==='right')pad.r=v;
+    if(k==='act'){pad.a=v; if(v) edgeA=true;}
+  };
+  const on=e=>{e.preventDefault(); set(1)};
+  const off=e=>{e.preventDefault(); set(0)};
+  b.addEventListener('pointerdown',on); b.addEventListener('pointerup',off);
+  b.addEventListener('pointerleave',off); b.addEventListener('pointercancel',off);
+});
+function input(){
+  const l=held.has('arrowleft')||held.has('a')||!!pad.l;
+  const r=held.has('arrowright')||held.has('d')||!!pad.r;
+  const u=held.has('arrowup')||held.has('w')||!!pad.u;
+  const d=held.has('arrowdown')||held.has('s')||!!pad.d;
+  const a=held.has(' ')||held.has('enter')||!!pad.a;
+  const edge=(a&&!wasA)||edgeA;
+  wasA=a; edgeA=false;
+  return {l,r,u,d,a,edge};
+}
+
+/* UI */
+function hud(){
+  el.lives.textContent=String(S.lives);
+  el.score.textContent=String(S.score);
+  el.best.textContent=String(S.best);
+  const p=PHASE[S.phase];
+  if(S.mode==='play'){
+    el.phase.textContent=p.name+' · '+p.who;
+    el.hint.textContent=p.hint;
+    el.bar.style.width=(Math.min(1,S.prog/S.goal)*100)+'%';
+  } else {
+    el.bar.style.width='0%';
+  }
+}
+function toast(msg){
+  el.toast.textContent=msg; el.toast.classList.add('show'); S.toastT=.9;
+}
+function panel(o){
+  lockUI=true;
+  el.overlay.classList.remove('hide');
+  el.card.innerHTML='';
+  const h1=document.createElement('h1'); h1.textContent=o.title; el.card.appendChild(h1);
+  if(o.sub){const h2=document.createElement('h2'); h2.textContent=o.sub; el.card.appendChild(h2);}
+  if(o.body){const p=document.createElement('p'); p.textContent=o.body; el.card.appendChild(p);}
+  if(o.sci){const s=document.createElement('div'); s.className='sci'; s.textContent=o.sci; el.card.appendChild(s);}
+  const b=document.createElement('button'); b.type='button'; b.className='btn'; b.textContent=o.btn||'Continuar';
+  b.addEventListener('click',e=>{e.preventDefault(); e.stopPropagation(); lockUI=false; o.go&&o.go();});
+  el.card.appendChild(b);
+  // prevent accidental double space from previous frame
+  wasA=true; edgeA=false; held.delete(' '); held.delete('enter'); pad.a=0;
+}
+function hidePanel(){el.overlay.classList.add('hide'); lockUI=false;}
+
+function title(){
+  S.mode='title'; clearWorld(); floor(0x140c1f,18,12);
+  camera.position.set(0,7,12); camera.lookAt(0,1,0);
+  panel({
+    title:'Aventura da Vida',
+    sub:'Jornada 3D educativa',
+    body:'Setas ou WASD movem. Espaço / botão A age. No celular use o painel inferior. 3 vidas. Recorde salvo neste aparelho.',
+    sci:'Fases: corrida → digestório → respiratório → excretor → endócrino → nascimento. Entre elas há história e fatos científicos.',
+    btn:'Começar',
+    go:()=>{S.lives=3;S.score=0;S.phase=0; story(0);}
+  });
+  el.phase.textContent='Tela inicial';
+  el.hint.textContent='Pressione Começar.';
+  hud();
+}
+function story(i){
+  S.mode='story'; S.phase=i; clearWorld(); floor(0x1a1028,16,12);
+  camera.position.set(0,6,11); camera.lookAt(0,1,0);
+  const s=STORY[i];
+  panel({title:s.t, body:s.b, sci:s.s, btn:s.btn, go:()=>{hidePanel(); start(i);}});
+  el.phase.textContent=s.t; el.hint.textContent='Leia e continue.'; hud();
+}
+function growth(){
+  S.mode='growth'; clearWorld(); floor(0x201030,14,10);
+  const b=addPlayer(0xffb6c8,'baby');
+  b.mesh.scale.setScalar(.7+S.phase*.22);
+  camera.position.set(0,4,8); camera.lookAt(0,1,0);
+  panel({
+    title:'O bebê cresce',
+    sub:GROW[Math.min(S.phase,GROW.length-1)],
+    body:'Cada sistema concluído organiza um pouco mais o organismo em formação.',
+    sci:'Ciência: divisão celular, diferenciação e maturação de órgãos acontecem em sequência ao longo das semanas.',
+    btn:'Próxima etapa',
+    go:()=>{
+      hidePanel();
+      const n=S.phase+1;
+      if(n>=PHASE.length) win(); else story(n);
+    }
+  });
+  el.phase.textContent='Crescimento'; hud();
+}
+function win(){
+  S.mode='win'; S.best=Math.max(S.best,S.score);
+  try{localStorage.setItem(KEY,String(S.best))}catch(e){}
+  clearWorld(); floor(0x241018,14,10); addPlayer(0xffb6c8,'baby');
+  camera.position.set(0,5,9); camera.lookAt(0,1,0);
+  panel({
+    title:'Nasceu!',
+    sub:'Pontos '+S.score+' · Recorde '+S.best,
+    body:'Você completou a jornada: da fecundação ao nascimento, passando pelos quatro sistemas.',
+    sci:'Ciência: no nascimento os pulmões expandem e a circulação deixa de depender da placenta.',
+    btn:'Jogar de novo', go:()=>title()
+  });
+  el.phase.textContent='Vitória'; hud();
+}
+function dead(){
+  S.mode='dead';
+  panel({
+    title:'Fim de jogo',
+    body:'As 3 vidas acabaram. Tente outra vez com mais cuidado nas fases difíceis.',
+    btn:'Voltar ao início', go:()=>title()
+  });
+}
+function hurt(){
+  if(S.inv>0||S.mode!=='play') return;
+  S.lives--; S.inv=1.15; toast('Ai!');
+  burst(player.x,player.y,player.z,0xff6b9d,12);
+  if(S.lives<=0){dead(); return;}
+  // safe respawn
+  const id=PHASE[S.phase].id;
+  if(id==='birth'){player.x=0; player.z=10;}
+  else if(id==='filter'){player.x=-1; player.z=0;}
+  else {player.x=-8; player.z=0;}
+  player.vx=player.vz=player.vy=0;
+  player.mesh.position.set(player.x,player.y,player.z);
+  hud();
+}
+function done(){
+  S.score+=500; S.best=Math.max(S.best,S.score);
+  try{localStorage.setItem(KEY,String(S.best))}catch(e){}
+  toast('+500');
+  burst(player?.x||0,1,player?.z||0,0xffe6c8,16);
+  if(S.phase>=PHASE.length-1) win(); else growth();
+  hud();
+}
+
+/* levels */
+function start(i){
+  S.mode='play'; S.phase=i; S.prog=0; S.inv=0; clearWorld();
+  const id=PHASE[i].id;
+
+  if(id==='swim'){
+    S.goal=1; floor(0x2a1528,34,16);
+    box(0,1,-7.6,34,2,.5,0x3d2040,'wall'); box(0,1,7.6,34,2,.5,0x3d2040,'wall');
+    addPlayer(0xffffff,'sperm'); player.x=-12; player.mesh.position.x=-12;
+    ball(12,.9,0,1.15,0xff6b9d,'goal');
+    // drifting clots
+    for(let i=0;i<10;i++){
+      ball(-8+i*2,.5,((i%3)-1)*2.8,.5,0xc44b6a,'bad',0,(i%2?1:-1)*(1.8+i*.08));
+    }
+    // gentle gates
+    for(let i=0;i<4;i++) box(-4+i*4,.7,(i%2?3.2:-3.2),1.2,1.4,2.4,0x5a3048,'wall');
+    camera.position.set(-2,11,15); camera.lookAt(0,0,0);
+  }
+
+  if(id==='digest'){
+    S.goal=1; floor(0x24150c,30,16);
+    addPlayer(0xf1c40f); player.x=-12; player.z=-5; player.mesh.position.set(-12,.55,-5);
+    // maze corridors
+    const W=[
+      [-6,-3,1.4,8],[ -2,3,1.4,8],[2,-3,1.4,8],[6,3,1.4,8],[10,-2,1.4,7],
+      [-9,4,7,1.3],[1,-5,9,1.3],[5,5,8,1.3],[-3,-1,4,1.3]
+    ];
+    W.forEach(([x,z,sx,sz])=>box(x,.85,z,sx,1.7,sz,0x8a5a32,'wall'));
+    ball(-3,.5,4,.48,0x7dff6b,'bad',0,2.4);
+    ball(4,.5,-2,.48,0x7dff6b,'bad',2.1,0);
+    ball(8,.5,2,.48,0x7dff6b,'bad',0,-2.2);
+    ball(12.5,.65,0,.7,0xffe6c8,'goal');
+    camera.position.set(0,15,13); camera.lookAt(0,0,0);
+  }
+
+  if(id==='breathe'){
+    S.goal=8; floor(0x0b1830,26,18);
+    // platforms as raised boxes
+    const plats=[[-8,0,3.5],[-4,3,3],[-4,-3.5,3],[0,0,3.2],[3,3.5,3],[3,-3,3],[7,1,3],[10,-2,3]];
+    plats.forEach(([x,z,s])=>{
+      box(x,.25,z,s,.5,s,0x2a6aaa,'plat');
+    });
+    addPlayer(0x7ec8ff); player.x=-8; player.z=0; player.y=1; player.mesh.position.set(-8,1,0);
+    const o2=[[-4,3],[-4,-3.5],[0,0],[3,3.5],[3,-3],[7,1],[10,-2],[10,2.5]];
+    o2.forEach(([x,z])=>ball(x,1.4,z,.32,0x4aa3ff,'o2'));
+    camera.position.set(0,13,15); camera.lookAt(0,0,0);
+  }
+
+  if(id==='filter'){
+    S.goal=7; floor(0x0c2018,28,16);
+    const zone=new THREE.Mesh(new THREE.PlaneGeometry(5,16),mat(0x14523f,0x1abc9c,.25));
+    zone.rotation.x=-Math.PI/2; zone.position.set(-11,.03,0); world.add(zone);
+    // label pillar
+    box(-11,.8,0,.4,1.6,.4,0x1abc9c,'deco');
+    addPlayer(0x1abc9c); player.x=-2; player.mesh.position.x=-2;
+    for(let i=0;i<7;i++){
+      ball(1+(i%4)*2.8,.5,-5+Math.floor(i/4)*5.5,.42,0xe24b4b,'tox',
+        (i%2?1:-1)*1.3,(i%3-1)*1.6);
+    }
+    camera.position.set(0,13,14); camera.lookAt(0,0,0);
+  }
+
+  if(id==='hormone'){
+    S.goal=6; floor(0x1a1028,26,16);
+    addPlayer(0xe67e22); player.x=-10; player.mesh.position.x=-10;
+    for(let i=0;i<6;i++) ball(-5+i*2.6,.5,(i%2?3.5:-3.5),.38,0x3ddc84,'good',0,(i%2?-1:1)*2.1);
+    for(let i=0;i<5;i++) ball(-4+i*2.8,.5,0,.4,0xe67e22,'bad',(i%2?1:-1)*2.5,(i%2?-1:1)*1.2);
+    camera.position.set(0,12,14); camera.lookAt(0,0,0);
+  }
+
+  if(id==='birth'){
+    S.goal=1; floor(0x240814,12,30);
+    box(-4.2,1.1,0,1.2,2.2,30,0x3a1424,'wall');
+    box(4.2,1.1,0,1.2,2.2,30,0x3a1424,'wall');
+    addPlayer(0xffb6c8,'baby'); player.x=0; player.z=11; player.mesh.position.set(0,.55,11);
+    for(let i=0;i<6;i++){
+      const side=i%2===0?-1.7:1.7;
+      box(side,.75,-10+i*3.6,3.4,1.3,.85,0xff2d55,'wave');
+    }
+    camera.position.set(0,14,16); camera.lookAt(0,0,0);
+  }
+  hud();
+}
+
+/* sim */
+function move(inp,dt){
+  if(!player||S.mode!=='play') return;
+  const id=PHASE[S.phase].id;
+  const spd=id==='birth'?6: id==='swim'?7.2:7.8;
+  let ix=(inp.r?1:0)-(inp.l?1:0);
+  let iz=(inp.d?1:0)-(inp.u?1:0);
+  const len=Math.hypot(ix,iz)||1; if(ix||iz){ix/=len; iz/=len;}
+
+  if(id==='breathe'){
+    player.vx=ix*spd; player.vz=iz*spd;
+    if(inp.edge) player.vy=5.2;
+    player.vy-=12*dt; player.y+=player.vy*dt;
+    // land on platforms
+    let landed=false;
+    if(player.vy<=0){
+      for(const e of ents){
+        if(e.kind!=='plat') continue;
+        const hx=e.sx/2+.2, hz=e.sz/2+.2;
+        if(Math.abs(player.x-e.x)<hx && Math.abs(player.z-e.z)<hz){
+          const top=e.y+e.sy/2+.42;
+          if(player.y<=top+.15 && player.y>=top-.35){player.y=top; player.vy=0; landed=true;}
+        }
+      }
+    }
+    if(player.y< -2){hurt(); player.y=1; player.vy=0; player.x=-8; player.z=0;}
+    if(!landed && player.y<.55 && player.vy<=0){ /* fall between platforms */ }
+  } else if(id==='swim'){
+    player.vx=ix*spd + 2.0; // current
+    player.vz=iz*spd;
+    player.y=.55;
+  } else if(id==='birth'){
+    player.vx=ix*spd;
+    player.vz=iz*spd - 2.6; // auto climb ( -z )
+    player.y=.55;
+  } else {
+    player.vx=ix*spd; player.vz=iz*spd; player.y=.55;
+  }
+
+  let nx=player.x+player.vx*dt;
+  let nz=player.z+player.vz*dt;
+  const limX=id==='birth'?2.7:13;
+  const limZ=id==='birth'?13:7;
+  nx=Math.max(-limX,Math.min(limX,nx));
+  nz=Math.max(-limZ,Math.min(limZ,nz));
+
+  // walls AABB
+  for(const e of ents){
+    if(e.kind!=='wall') continue;
+    const hx=e.sx/2+player.r, hz=e.sz/2+player.r;
+    if(Math.abs(nx-e.x)<hx && Math.abs(nz-e.z)<hz){
+      const dx=nx-e.x, dz=nz-e.z;
+      if(Math.abs(dx)/hx > Math.abs(dz)/hz) nx=e.x+Math.sign(dx||1)*hx;
+      else nz=e.z+Math.sign(dz||1)*hz;
+    }
+  }
+  player.x=nx; player.z=nz;
+  player.mesh.position.set(player.x, player.y + Math.sin(S.t*5)*.04, player.z);
+  if(Math.abs(player.vx)+Math.abs(player.vz)>.2)
+    player.mesh.rotation.y=Math.atan2(player.vx, player.vz||.01);
+  if(player.mesh.userData.tail)
+    player.mesh.userData.tail.rotation.y=Math.sin(S.t*14)*.4;
+}
+
+function updateEnts(dt){
+  if(S.mode!=='play'||!player) return;
+  const id=PHASE[S.phase].id;
+
+  for(const e of ents){
+    if(e.taken) continue;
+    if(e.kind==='bad'||e.kind==='tox'||e.kind==='good'){
+      e.x+=e.vx*dt; e.z+=e.vz*dt;
+      if(e.x<-12||e.x>12) e.vx*=-1;
+      if(e.z<-6.5||e.z>6.5) e.vz*=-1;
+      e.mesh.position.set(e.x, e.y+Math.sin(S.t*3+e.x)*.1, e.z);
+      e.mesh.rotation.y+=dt;
+    }
+    if(e.kind==='wave'){
+      e.z+=3.6*dt; if(e.z>13) e.z=-13;
+      e.mesh.position.z=e.z;
+    }
+    if(e.kind==='o2'){ e.mesh.position.y=1.3+Math.sin(S.t*3+e.x)*.3; e.mesh.rotation.y+=dt*1.5; }
+    if(e.kind==='goal'){ e.mesh.rotation.y+=dt*.9; e.mesh.position.y=e.y+Math.sin(S.t*2)*.12; }
+  }
+
+  // collide
+  for(const e of ents){
+    if(e.taken||e.kind==='wall'||e.kind==='plat'||e.kind==='deco') continue;
+    const rr=(player.r+e.r)*(player.r+e.r);
+    const d2=(player.x-e.x)**2+(player.z-e.z)**2;
+    if(d2>rr) continue;
+
+    if(e.kind==='bad'||e.kind==='wave'){ hurt(); return; }
+    if(e.kind==='goal'){ e.taken=true; e.mesh.visible=false; S.prog=S.goal; burst(e.x,e.y,e.z,0xff6b9d,14); done(); return; }
+    if(e.kind==='o2'||e.kind==='good'){
+      e.taken=true; e.mesh.visible=false; S.prog++; S.score+=90;
+      burst(e.x,e.y,e.z,e.kind==='o2'?0x4aa3ff:0x3ddc84,8);
+      toast(e.kind==='o2'?'+O₂':'+hormônio');
+      hud();
+      if(S.prog>=S.goal) done();
+      return;
+    }
+    if(e.kind==='tox'){
+      const dx=e.x-player.x, dz=e.z-player.z, d=Math.hypot(dx,dz)||1;
+      e.vx+=dx/d*8; e.vz+=dz/d*8;
+      const sp=Math.hypot(e.vx,e.vz); if(sp>9){e.vx=e.vx/sp*9; e.vz=e.vz/sp*9;}
+      if(e.x<-9.2){
+        e.taken=true; e.mesh.visible=false; S.prog++; S.score+=75;
+        burst(e.x,.6,e.z,0x1abc9c,8); toast('filtrada');
+        hud(); if(S.prog>=S.goal) done();
+      }
+    }
+  }
+
+  if(id==='birth' && player.z<-10.5){ S.prog=1; done(); }
+  if(id==='swim'){ // soft progress display by distance
+    S.prog=Math.max(S.prog, Math.min(.99, (player.x+12)/24));
+    hud();
+  }
+}
+
+function cam(dt){
+  if(!player||S.mode!=='play') return;
+  const id=PHASE[S.phase].id;
+  const desired=new THREE.Vector3(player.x*.25, id==='digest'?15:12.5, (id==='birth'?13:15)+player.z*.12);
+  camera.position.lerp(desired, 1-Math.pow(.0008,dt));
+  camera.lookAt(player.x*.4, .2, player.z*.3);
+}
+
+function stepParticles(dt){
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i];
+    p.life-=dt; p.vy-=6*dt;
+    p.m.position.x+=p.vx*dt; p.m.position.y+=p.vy*dt; p.m.position.z+=p.vz*dt;
+    p.m.scale.setScalar(Math.max(.01,p.life));
+    if(p.life<=0){ world.remove(p.m); p.m.geometry.dispose(); p.m.material.dispose(); particles.splice(i,1); }
+  }
+}
+
+let last=performance.now();
+function frame(now){
+  const dt=Math.min(.05,(now-last)/1000); last=now;
+  S.t+=dt; if(S.inv>0) S.inv-=dt;
+  if(S.toastT>0){S.toastT-=dt; if(S.toastT<=0) el.toast.classList.remove('show');}
+
+  const inp=input();
+  // UI confirm with edge only, and not while lock settles
+  if(!el.overlay.classList.contains('hide') && inp.edge && !lockUI){
+    const b=el.card.querySelector('.btn'); b&&b.click();
+  } else if(!el.overlay.classList.contains('hide') && inp.edge && lockUI){
+    // ignore first edge after panel open
+  }
+
+  if(S.mode==='play'){ move(inp,dt); updateEnts(dt); cam(dt); }
+  else if(player?.mesh) player.mesh.rotation.y+=dt*.7;
+
+  if(player?.mesh) player.mesh.visible = S.inv<=0 || (Math.floor(S.t*18)%2===0);
+  stepParticles(dt);
+  renderer.render(scene,camera);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+title();
+</script>
+</body>
+</html>
